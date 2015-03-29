@@ -8,8 +8,19 @@ require 'prawn/templates'
 require_relative 'prawn_ext'
 require_relative 'pdfmarks'
 require_relative 'asciidoctor_ext'
+
+# FIXME: REVERT 20bce89c7aa75bdfa9830abc56214633827d9abc
+require_relative 'implicit_header_processor'
+
 require_relative 'theme_loader'
 require_relative 'roman_numeral'
+
+# FIXME: REVERT 20bce89c7aa75bdfa9830abc56214633827d9abc
+Asciidoctor::Extensions.register :pdf do
+  include_processor Asciidoctor::Pdf::ImplicitHeaderProcessor if @document.backend == 'pdf'
+end
+
+# Reverting 20bce89c7aa75bdfa9830abc56214633827d9abc was necessary, as the change did not seem to actually work in the new location with respect to Editions.
 
 module Asciidoctor
 module Pdf
@@ -58,6 +69,7 @@ class Converter < ::Prawn::Document
   end
 
   def convert node, name = nil
+    # puts "I'm this kind of node: #{node}"
     method_name = %(convert_#{name ||= node.node_name})
     result = nil
     if respond_to? method_name
@@ -107,18 +119,26 @@ class Converter < ::Prawn::Document
 
     toc_start_page_num = page_number
     num_toc_levels = (doc.attr 'toclevels', 2).to_i
-    if doc.attr? 'toc'
-      toc_page_nums = ()
-      dry_run do
-        toc_page_nums = layout_toc doc, num_toc_levels, 1
-      end
-      # reserve pages for the toc
-      toc_page_nums.each do
-        start_new_page
-      end
-    end
+    # FIXME: HACK -- editions does not expect a dry_run and this
+    # causes side effects in the document. Need to make editions
+    # compliant with this model.
 
-    num_front_matter_pages = page_number - 1
+    # if doc.attr? 'toc'
+    #   toc_page_nums = ()
+    #   dry_run do
+    #     toc_page_nums = layout_toc doc, num_toc_levels, 1
+    #   end
+    #
+    #   # reserve pages for the toc
+    #   toc_page_nums.each do
+    #    start_new_page
+    #   end
+    # end
+
+    # FIXME: Another HACK to fix editions expectations of ad-pdf!
+    # num_front_matter_pages = page_number - 1
+    num_front_matter_pages = 4 # hardcoded based on editions expectations...
+
     font @theme.base_font_family, size: @theme.base_font_size
     convert_content_for_block doc
 
@@ -196,11 +216,13 @@ class Converter < ::Prawn::Document
   end
 
   def convert_section sect, opts = {}
+    puts "convert_section: #{sect}"
     heading_level = sect.level + 1
     theme_font :heading, level: heading_level do
       title = sect.numbered_title formal: true
       unless at_page_top?
         if sect.chapter?
+          puts "I'm a chapter: #{sect}"
           start_new_chapter sect
         # FIXME smarter calculation here!!
         elsif cursor < (height_of title) + @theme.heading_margin_top + @theme.heading_margin_bottom + @theme.base_line_height_length * 1.5
@@ -745,7 +767,7 @@ class Converter < ::Prawn::Document
         case cell.style
         when :emphasis
           cell_data[:font_style] = :italic
-        when :strong, :header  
+        when :strong, :header
           cell_data[:font_style] = :bold
         when :monospaced
           cell_data[:font] = @theme.literal_font_family
@@ -1122,6 +1144,7 @@ class Converter < ::Prawn::Document
         # TODO it would be convenient to have a cursor mark / placement utility that took page number into account
         go_to_page start_page_number if start_page_number != end_page_number
         move_cursor_to start_cursor
+        # puts "SECTION: #{sect.methods}"
         sect_page_num = (sect.attr 'page_start') - num_front_matter_pages
         num_dots = ((bounds.width - (width_of %(#{sect_title} #{sect_page_num}), inline_format: true)) / dot_width).floor
         typeset_formatted_text [text: %(#{DotLeader * num_dots} #{sect_page_num}), anchor: sect.id], line_metrics, align: :right
@@ -1183,7 +1206,7 @@ class Converter < ::Prawn::Document
     # title page (i)
     # TODO same conditional logic as in layout_title_page; consolidate
     if doc.header? && !doc.noheader && !doc.notitle
-      page_num_labels[0] = { P: ::PDF::Core::LiteralString.new(front_matter_counter.next!.to_s) } 
+      page_num_labels[0] = { P: ::PDF::Core::LiteralString.new(front_matter_counter.next!.to_s) }
     end
 
     # toc pages (ii..?)

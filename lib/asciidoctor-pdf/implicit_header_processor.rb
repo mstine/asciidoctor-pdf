@@ -12,6 +12,8 @@ class ImplicitHeaderProcessor < ::Asciidoctor::Extensions::IncludeProcessor
       if (first_line = fd.readline) && (first_line.start_with? '= ')
         # HACK reset counters for each article for Editions
         if doc.attr? 'env', 'editions'
+          puts "IS THIS RUNNING?"
+
           doc.counters.each do |(counter_key, counter_val)|
             doc.attributes.delete counter_key
           end
@@ -56,8 +58,4 @@ class ImplicitHeaderProcessor < ::Asciidoctor::Extensions::IncludeProcessor
   end
 end
 end
-end
-
-Asciidoctor::Extensions.register :pdf do
-  include_processor Asciidoctor::Pdf::ImplicitHeaderProcessor if @document.backend == 'pdf'
 end
